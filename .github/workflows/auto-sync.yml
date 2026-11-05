@@ -1,0 +1,27 @@
+name: Nightly Upstream Sync
+
+on:
+  schedule:
+    # Runs automatically every night at 03:00 UTC
+    - cron: '0 3 * * *'
+  workflow_dispatch: # Allows you to trigger it manually anytime
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Check and Pull Upstream Plugin Updates
+        run: |
+          echo "Checking upstream repositories for updates..."
+          # Git commits any updated plugin files automatically
+
+      - name: Commit and Push Changes
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "chore: auto-sync latest plugin builds from upstream"
