@@ -2,9 +2,9 @@ name: Nightly Upstream Sync
 
 on:
   schedule:
-    # Runs automatically every night at 03:00 UTC
+    # Runs automatically every day at 03:00 UTC
     - cron: '0 3 * * *'
-  workflow_dispatch: # Allows you to trigger it manually anytime
+  workflow_dispatch: # Allows manual trigger from the Actions tab anytime
 
 jobs:
   sync:
@@ -16,12 +16,73 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Check and Pull Upstream Plugin Updates
+      - name: Download Upstream Plugin Files
         run: |
-          echo "Checking upstream repositories for updates..."
-          # Git commits any updated plugin files automatically
+          sync_plugin() {
+            local name="$1"
+            local base_url="$2"
 
-      - name: Commit and Push Changes
+            # Detect local folder (supports with/without space, in plugins/ or root)
+            local clean_name="${name// /}"
+            local target_dir=""
+            for candidate in "plugins/$name" "plugins/$clean_name" "$name" "$clean_name"; do
+              if [ -d "$candidate" ]; then
+                target_dir="$candidate"
+                break
+              fi
+            done
+
+            # Fallback if folder does not exist yet
+            if [ -z "$target_dir" ]; then
+              target_dir="plugins/$clean_name"
+              mkdir -p "$target_dir"
+            fi
+
+            echo "Syncing $name into $target_dir from $base_url..."
+
+            # Attempt fetching index.js and manifest.json (checking both clean and original paths)
+            local fetched=false
+            for slug in "$clean_name" "$name"; do
+              if curl -sSL -f "$base_url/$slug/index.js" -o "$target_dir/index.js"; then
+                curl -sSL -f "$base_url/$slug/manifest.json" -o "$target_dir/manifest.json" || true
+                fetched=true
+                echo "✓ Successfully synced $name"
+                break
+              fi
+            done
+
+            if [ "$fetched" = false ]; then
+              echo "⚠️ Warning: Failed to fetch $name from $base_url"
+            fi
+          }
+
+          # MarkLong0467 / EskimoPlugins
+          sync_plugin "Crop Plus" "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages"
+          sync_plugin "Rich Presence" "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages"
+          sync_plugin "Role Options" "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages"
+          sync_plugin "Server Info" "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages"
+
+          # bleelblep / bleel-bazinga-repo
+          sync_plugin "Live Markdown" "https://bleelblep.github.io/bleel-bazinga-repo"
+          sync_plugin "New Members" "https://bleelblep.github.io/bleel-bazinga-repo"
+          sync_plugin "Round Corners" "https://bleelblep.github.io/bleel-bazinga-repo"
+          sync_plugin "Text Animation" "https://bleelblep.github.io/bleel-bazinga-repo"
+          sync_plugin "Timezones" "https://bleelblep.github.io/bleel-bazinga-repo"
+
+          # noreplyui5 / valenced-plugin
+          sync_plugin "Fast Copy User ID" "https://noreplyui5.github.io/valenced-plugin"
+
+      - name: Rebuild Repository Index
+        run: |
+          # If the repo uses a build script for index.json, execute it before committing
+          if [ -f "package.json" ]; then
+            npm install --production 2>/dev/null || true
+            npm run build 2>/dev/null || node build.js 2>/dev/null || true
+          elif [ -f "build.js" ]; then
+            node build.js || true
+          fi
+
+      - name: Commit and Push Updates
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: "chore: auto-sync latest plugin builds from upstream"
+          commit_message: "chore(plugins): auto-sync latest upstream plugin builds"
