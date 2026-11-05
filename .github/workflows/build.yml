@@ -1,0 +1,99 @@
+name: Build Brownie Plugins
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch and Curate Plugins
+        run: |
+          node -e '
+            const fs = require("fs");
+
+            const sources = [
+              "https://bleelblep.github.io/bleel-bazinga-repo/index.json",
+              "https://raw.githubusercontent.com/MarkLong0467/EskimoPlugins/gh-pages/index.json",
+              "https://noreplyui5.github.io/valenced-plugin/index.json"
+            ];
+
+            const wanted = new Set([
+              "cropplus",
+              "fastcopyuserid",
+              "livemarkdown",
+              "newmembers",
+              "richpresence",
+              "roleoptions",
+              "roundcorners",
+              "serverinfo",
+              "textanimation",
+              "timezones"
+            ]);
+
+            const norm = s => String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+
+            async function run() {
+              const output = {
+                format: 1,
+                name: "Brownie Plugins",
+                description: "Freshly baked plugins for Valenced, straight out of Bjorn'\''s oven. Sweet, lightweight, and fully functional.",
+                plugins: {}
+              };
+
+              for (const url of sources) {
+                try {
+                  const res = await fetch(url);
+                  if (!res.ok) continue;
+                  const data = await res.json();
+                  
+                  const entries = Array.isArray(data.plugins)
+                    ? data.plugins.map(p => [p.id, p])
+                    : Object.entries(data.plugins || {});
+
+                  for (const [key, plugin] of entries) {
+                    const normKey = norm(key);
+                    const normName = norm(plugin.name);
+
+                    if (wanted.has(normKey) || wanted.has(normName)) {
+                      const item = { ...plugin };
+                      item.author = "Bjorn";
+
+                      // Ensure download URLs are full absolute links so Valenced can fetch them
+                      if (item.versions) {
+                        for (const ver of Object.values(item.versions)) {
+                          if (ver.url && !ver.url.startsWith("http")) {
+                            const baseUrl = url.includes("MarkLong0467")
+                              ? "https://marklong0467.github.io/EskimoPlugins/"
+                              : url.substring(0, url.lastIndexOf("/") + 1);
+                            ver.url = new URL(ver.url, baseUrl).href;
+                          }
+                        }
+                      }
+
+                      output.plugins[key] = item;
+                    }
+                  }
+                } catch (err) {
+                  console.error("Error reading " + url, err.message);
+                }
+              }
+
+              fs.writeFileSync("index.json", JSON.stringify(output, null, 2));
+            }
+
+            run();
+          '
+
+      - name: Commit index.json to main
+        run: |
+          git config user.name "bjornxty"
+          git config user.email "bjornxty@users.noreply.github.com"
+          git add index.json
+          git commit -m "Generate Brownie Plugins index.json" || exit 0
+          git push origin main
